@@ -6,15 +6,6 @@ replicaCount: 1
 rbac:
   eventsAccess: true
 
-extraVolumes:
-- name: events-file
-  emptyDir: {}
-
-extraVolumeMounts:
-- mountPath: /tmp/v4m
-  name: events-file
-  subPath: k8s_events.json
-
 env:
    - name: ES_LOGCOLLECTOR_USER
      valueFrom:
@@ -34,8 +25,8 @@ config:
         Flush        1
         Daemon       Off
         Log_Level    info
-        Parsers_File parsers.conf
-        Parsers_File viya-parsers.conf
+        #Parsers_File parsers.conf
+        #Parsers_File viya-parsers.conf
         HTTP_Server  On
         HTTP_Listen  0.0.0.0
         HTTP_Port    2020
@@ -48,27 +39,14 @@ config:
   inputs: |
     [INPUT]
         name kubernetes_events
-        tag k8s_events
-    [INPUT]
-        name tail
-        tag kube.*
-        path /tmp/v4m/*.json
-        parser json
+        tag  k8s_events
+        DB   /var/log/v4m_fb_events.db
 
   outputs: |
-    #[OUTPUT]
-    #    name stdout
-    #    match k8s_events
-    #    format json_lines
-    [OUTPUT]
-        name file
-        match k8s_events
-        format plain
-        file /tmp/v4m/k8s_events.json
     [OUTPUT]
         Name  opensearch
         Alias opensearch_events
-        Match kube.*
+        Match k8s_events
         Host  v4m-search
         Port  9200
         Buffer_Size 512KB
@@ -77,12 +55,11 @@ config:
         Suppress_Type_Name On
         Workers 2
         Time_Key @timestamp
-        #Include_Tag_Key: added for debugging
-        #Include_Tag_Key    On
-        Generate_ID  On
-        ##ID_Key $properties['eventid']
+        #Generate_ID  On
+        ID_Key $properties['eventid']
+        #ID_Key $metadata['uid']
         Replace_Dots On
-        Logstash_Prefix viya_events
+        Logstash_Prefix viya_events2
         HTTP_User ${ES_LOGCOLLECTOR_USER}
         HTTP_Passwd ${ES_LOGCOLLECTOR_PASSWD}
         tls         on
@@ -92,52 +69,97 @@ config:
   filters: |
     [FILTER]
         Name modify
-        Match *
-        Set  fb_configMap_version event19
+        Match k8s_events
+        Set  fb_configMap_version event37
     [FILTER]
-        Name                kubernetes
-        Match               kube.*
-        Kube_Tag_Prefix     kube.var.log.containers.
-        Kube_URL            https://kubernetes.default.svc:443
-        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
-        Buffer_Size         128KB
-        Cache_Use_Docker_Id On
-        Merge_Log           On
-        Merge_Log_Key       json_log
+        Alias events_lift_object
+        Name         nest
+        Match k8s_events
+        Operation    lift
+        Nested_under involvedObject
+        Add_prefix   INVOBJ__
     [FILTER]
+        Alias events_lift_metadata
+        Name         nest
+        Match k8s_events
+        Operation    lift
+        Nested_under metadata
+        Add_prefix   META__
+    [FILTER]
+        Alias events_lift_source
+        Name         nest
+        Match k8s_events
+        Operation    lift
+        Nested_under source
+        Add_prefix   SRC__
+    [FILTER]
+        Alias k8s_modify1
         Name modify
-        Match kube.*
+        Match k8s_events
         set logsource KUBE_EVENT2
-        rename $involvedObject['namespace'] k8s_namespace
-        rename $source['host']              k8s_host
         copy lastTimestamp         timeStamp
         copy type                  level
-        #rename message message
-        rename firstTimestamp      PROPS__firsttimestamp
-        rename lastTimestamp       PROPS__lastimestamp
-        rename count               PROPS__count
-        rename type                PROPS__type
-        rename reason              PROPS__reason
-        rename clusterName         PROPS__clustername
-        ##rename $involvedObject['kind'] PROPS__object_type
-        ##rename $involvedObject['name'] PROPS__object
-        rename $metadata['uid']    PROPS__eventid
-        ##rename $metadata['name']       PROPS__metaname
-        rename metadata JUNK__metadata
-        #rename metadata mdata
-        rename involvedObject JUNK__involvedObject
-    #[FILTER]
-        #Name modify
-        #Match kube.*
-        #rename $mdata['name']       PROPS__metaname
-        #rename $mdata['uid']       PROPS__eventid
-        #rename mdata JUNK__metadata
+
+        ## Using source object Kubernetes metadata for "log message"
+        #rename $involvedObject['namespace'] k8s__namespace
+        rename INVOBJ__namespace            k8s__namespace
+        #rename $source['host']              k8s__host
+        rename SRC__host                    k8s__host
+
+        ## Storing other useful info in 'properties'
+        rename firstTimestamp               PROPS__firsttimestamp
+        rename lastTimestamp                PROPS__lastimestamp
+        rename count                        PROPS__count
+        rename type                         PROPS__type
+        rename reason                       PROPS__reason
+        rename clusterName                  PROPS__clustername
+        #rename $involvedObject['kind']      PROPS__object_type
+        #rename $involvedObject['name']      PROPS__object
+        rename INVOBJ__kind                 PROPS__object_type
+        rename INVOBJ__name                 PROPS__object
+        ## Not sure about these two
+        rename reportingComponent           PROPS__reportingComponent
+        rename reportingInstance            PROPS__reportingInstance
+
+        #copy   $metadata['name']            PROPS__eventName
+        #copy   $metadata['uid']             PROPS__eventid
+        rename META__name                   PROPS__eventName
+        rename META__uid                    PROPS__eventid
     [FILTER]
-        #
+        Alias events_set_kube_fields
+        Name  modify
+        Match k8s_events
+        Condition Key_value_matches  PROPS__object_type  Pod|Job
+        Copy PROPS__object      k8s__pod
+        Copy INVOBJ__uid        k8s__pod_id
+    [FILTER]
+        # Re-construct EVENT structures (just in case)
+        Alias events_nest_object
+        Name         nest
+        Match        k8s_events
+        Operation    nest
+        Wildcard     INVOBJ__*
+        Nest_under   involvedObject
+        Remove_prefix    INVOBJ__
+    [FILTER]
+        Alias events_nest_meta
+        Name         nest
+        Match        k8s_events
+        Operation    nest
+        Wildcard     META__*
+        Nest_under   metadata
+        Remove_prefix  META__
+    [FILTER]
+        Alias events_nest_source
+        Name         nest
+        Match        k8s_events
+        Operation    nest
+        Wildcard     SRC__*
+        Nest_under   source
+        Remove_prefix SRC__
+    [FILTER]
         # Create 'properties' map
         # ..any PROPS_ objects are included
-        #
         Alias           nest_PROPS_under_properties
         Name            nest
         Match           *
@@ -146,11 +168,32 @@ config:
         Nest_under      properties
         Remove_prefix   PROPS__
     [FILTER]
+        # Create 'kube' map
+        # ..any k8s_ objects are included
+        Alias           nest_K8s
+        Name            nest
+        Match           *
+        Operation       nest
+        Wildcard        k8s__*
+        Nest_under      kube
+        Remove_prefix   k8s__
+    [FILTER]
+        Alias prep_junk
+        Name  modify
+        Match k8s_events
+        rename metadata J     JUNK__metadata
+        rename involvedObject JUNK__involvedObject
+        rename source         JUNK__source
+        rename eventTime      JUNK__eventTime
+
+    [FILTER]
         Alias           nest_junk
         Name            nest
         Match           *
         Operation       nest
         Wildcard        JUNK__*
-        Nest_under      zzzjunk
+        Nest_under      junk
         Remove_prefix   JUNK__
+
+
 
