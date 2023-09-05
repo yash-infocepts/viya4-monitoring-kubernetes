@@ -18,6 +18,14 @@ env:
          name: internal-user-logcollector
          key: password
 
+extraVolumes:
+- name: fb-events-db
+  emptyDir: {}
+
+extraVolumeMounts:
+- name: fb-events-db
+  mountPath: /tmp/v4m
+  subPath: v4m_fb_events.db
 
 config:
   service: |
@@ -40,7 +48,8 @@ config:
     [INPUT]
         name kubernetes_events
         tag  k8s_events
-        DB   /var/log/v4m_fb_events.db
+        #DB   /var/log/v4m_fb_events.db
+        DB   /tmp/v4m/v4m_fb_events.db
 
   outputs: |
     [OUTPUT]
@@ -70,7 +79,7 @@ config:
     [FILTER]
         Name modify
         Match k8s_events
-        Set  fb_configMap_version event37
+        Set  fb_configMap_version event39
     [FILTER]
         Alias events_lift_object
         Name         nest
@@ -96,7 +105,7 @@ config:
         Alias k8s_modify1
         Name modify
         Match k8s_events
-        set logsource KUBE_EVENT2
+        set logsource KUBE_EVENT3
         copy lastTimestamp         timeStamp
         copy type                  level
 
