@@ -79,7 +79,7 @@ config:
     [FILTER]
         Name modify
         Match k8s_events
-        Set  fb_configMap_version event44
+        Set  fb_configMap_version event46
 
     [FILTER]
         #NOTE: Fluent Bit RecordAccessor support is not currently supported(?)
@@ -209,22 +209,21 @@ config:
         Nest_under      junk
         Remove_prefix   JUNK__
     [FILTER]
-       #
-       # ALLOWLIST Vars to output
-       #
-       Alias          allowlist
-       Name           record_modifier
-       Match          *
-       Allowlist_key  @timestamp
-       Allowlist_key  debug
-       Allowlist_key  level
-       Allowlist_key  kube
-       Allowlist_key  logsource
-       Allowlist_key  message
-       Allowlist_key  messageKey
-       Allowlist_key  messageParameters
-       Allowlist_key  properties
-       Remove_key     junk
+        #
+        # ALLOWLIST Vars to output
+        #
+        Alias          allowlist
+        Name           record_modifier
+        Match          *
+        Allowlist_key  @timestamp
+        Allowlist_key  debug
+        Allowlist_key  level
+        Allowlist_key  kube
+        Allowlist_key  logsource
+        Allowlist_key  message
+        Allowlist_key  messageKey
+        Allowlist_key  messageParameters
+        Allowlist_key  properties
 
 
 
