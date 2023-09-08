@@ -79,7 +79,7 @@ config:
     [FILTER]
         Name modify
         Match k8s_events
-        Set  DB__version fbevent.50
+        Set  fb_configMap_version event46
 
     [FILTER]
         #NOTE: Fluent Bit RecordAccessor support is not currently supported(?)
@@ -208,17 +208,6 @@ config:
         Wildcard        JUNK__*
         Nest_under      junk
         Remove_prefix   JUNK__
-    [FILTER]
-        #
-        # Move internal vars to DEBUG
-        #
-        Alias          move_debug_vars
-        Name           nest
-        Match          k8s_events
-        Operation      nest
-        Wildcard       DB__*
-        Nest_under     debug
-        Remove_prefix  DB__
     [FILTER]
         #
         # ALLOWLIST Vars to output
