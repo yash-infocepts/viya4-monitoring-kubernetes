@@ -79,7 +79,7 @@ config:
     [FILTER]
         Name modify
         Match k8s_events
-        Set  fb_configMap_version event46
+        Set  fb_configMap_version event47
 
     [FILTER]
         #NOTE: Fluent Bit RecordAccessor support is not currently supported(?)
